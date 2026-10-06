@@ -1,0 +1,8 @@
+ 
+This file tells Python which packages need to be installed for your app to run.
+Create a file named **`requirements.txt`** and add these exact dependencies:
+
+```text
+streamlit
+numpy
+ollama
