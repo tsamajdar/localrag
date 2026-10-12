@@ -1,3 +1,9 @@
+# ==========================================
+# 1. IMPORTS & CONFIGURATION BLOCK
+# Purpose: Imports required libraries for UI (Streamlit), 
+# vector database (ChromaDB), local LLMs/embeddings (Ollama), 
+# PDF parsing (pypdf), and utilities (hashlib, json, re).
+# ==========================================
 import hashlib
 import json
 import os
@@ -8,7 +14,6 @@ import ollama
 import streamlit as st
 from pypdf import PdfReader
 
-# --- CONFIGURATION ---
 CHROMA_DIR = "chroma_db"
 os.makedirs(CHROMA_DIR, exist_ok=True)
 PROJECTS_FILE = os.path.join(CHROMA_DIR, "projects.json")
@@ -20,7 +25,11 @@ st.set_page_config(
     page_title="Local Ollama Chroma RAG Assistant", page_icon="🤖", layout="wide"
 )
 
-# --- CUSTOM CSS FOR GEMINI/CLAUDE STYLE LOADER ANIMATION ---
+# ==========================================
+# 2. CUSTOM UI STYLING BLOCK
+# Purpose: Injects CSS styles for a modern Claude/Gemini-style 
+# typing/loading bouncing-dots animation.
+# ==========================================
 st.markdown(
     """
     <style>
@@ -51,7 +60,11 @@ st.markdown(
 )
 
 
-# --- PERSISTENT PROJECT UTILITIES ---
+# ==========================================
+# 3. PERSISTENT STORAGE UTILITIES
+# Purpose: Saves and loads user-created projects to disk 
+# so workspaces persist across page refreshes.
+# ==========================================
 def load_saved_projects():
   if os.path.exists(PROJECTS_FILE):
     try:
@@ -72,12 +85,12 @@ def save_projects_to_disk(projects_list):
     st.warning(f"Could not save projects: {e}")
 
 
-# --- TEXT CLEANING UTILITY ---
+# ==========================================
+# 4. TEXT CLEANING UTILITY
+# Purpose: Strips extra whitespaces, anomalous newlines, 
+# and formatting noise from extracted PDF/document text.
+# ==========================================
 def clean_text(text: str) -> str:
-  """Cleans raw extracted document text by removing extra whitespaces
-
-  and normalizing formatting artifacts.
-  """
   if not text:
     return ""
   text = re.sub(r"\n\s*\n", "\n\n", text)
@@ -85,7 +98,11 @@ def clean_text(text: str) -> str:
   return text.strip()
 
 
-# --- CHROMA CLIENT INITIALIZATION ---
+# ==========================================
+# 5. CHROMA CLIENT INITIALIZATION
+# Purpose: Initializes a persistent local ChromaDB client 
+# cached via Streamlit to ensure fast vector operations.
+# ==========================================
 @st.cache_resource
 def get_chroma_client():
   return chromadb.PersistentClient(path=CHROMA_DIR)
@@ -94,7 +111,11 @@ def get_chroma_client():
 chroma_client = get_chroma_client()
 
 
-# --- VECTOR STORE CLASS USING CHROMA & PROJECTS ---
+# ==========================================
+# 6. VECTOR STORE CLASS (CHROMA + PROJECTS + DEDUPLICATION)
+# Purpose: Handles chunking, MD5 hash deduplication (for chunks > 30 chars), 
+# Ollama embedding generation, project-scoped namespacing, and similarity search.
+# ==========================================
 class ChromaVectorStore:
 
   def __init__(self, project_name, filename, chunk_size=350, overlap=40):
@@ -103,7 +124,7 @@ class ChromaVectorStore:
     self.chunk_size = chunk_size
     self.overlap = overlap
 
-    # Namespace collection strictly by project hash and file hash
+    # Namespace collection strictly by project hash and file hash to prevent naming collisions
     proj_hash = hashlib.md5(self.project_name.encode("utf-8")).hexdigest()[:6]
     file_hash = hashlib.md5(self.filename.encode("utf-8")).hexdigest()[:8]
 
@@ -113,7 +134,7 @@ class ChromaVectorStore:
     )
 
   def is_indexed(self):
-    """Returns True if the collection already contains chunks."""
+    """Returns True if the collection already contains embedded chunks."""
     return self.collection.count() > 0
 
   def add_document(self, text):
@@ -187,7 +208,11 @@ class ChromaVectorStore:
     return []
 
 
-# --- INITIALIZE SESSION STATE WITH PERSISTENCE ---
+# ==========================================
+# 7. STREAMLIT SESSION STATE INITIALIZATION
+# Purpose: Maintains global state across reruns (active project, 
+# loaded documents, chat message history).
+# ==========================================
 if "projects" not in st.session_state:
   st.session_state.projects = load_saved_projects()
 if "current_project" not in st.session_state:
@@ -203,14 +228,22 @@ if "raw_document_text" not in st.session_state:
 if "messages" not in st.session_state:
   st.session_state.messages = []
 
-# --- UI HEADER ---
+# ==========================================
+# 8. MAIN UI HEADER
+# Purpose: Renders application title and model details.
+# ==========================================
 st.title("🤖 Local Ollama Chroma RAG Assistant")
 st.markdown(
     f"Ask questions below. Powered by Chroma DB and Ollama (`{GENERATION_MODEL}`"
     f")."
 )
 
-# --- SIDEBAR: PROJECT & KNOWLEDGE BASE MANAGEMENT ---
+
+# ==========================================
+# 9. SIDEBAR: PROJECT WORKSPACE & KNOWLEDGE BASE MANAGEMENT
+# Purpose: Manages project creation/switching, chunking sliders, 
+# response personas, cache selectors, and multi-file uploads.
+# ==========================================
 st.sidebar.title("🗂️ Project Workspace")
 
 
@@ -237,11 +270,11 @@ selected_project = st.sidebar.selectbox(
     on_change=handle_project_change,
 )
 
-# Explicit Create Project Section
+# Create New Project Expander
 with st.sidebar.expander("➕ Create New Project"):
   new_project_name = st.text_input(
       "New Project Name",
-      placeholder="e.g., Financial_Analysis_2026",
+      placeholder="e.g., Boardroom_Review_2026",
       key="new_proj_input",
   )
   if st.button("Create Project"):
@@ -264,7 +297,7 @@ with st.sidebar.expander("➕ Create New Project"):
 st.sidebar.markdown("---")
 st.sidebar.title("📁 Knowledge Base")
 
-# Dynamic Chunking Sliders
+# Dynamic Chunking Parameters Sliders
 st.sidebar.markdown("### ⚙️ Chunking Parameters")
 chunk_size_param = st.sidebar.slider(
     "Chunk Size (words)", min_value=100, max_value=800, value=350, step=50
@@ -273,12 +306,11 @@ overlap_param = st.sidebar.slider(
     "Chunk Overlap (words)", min_value=10, max_value=150, value=40, step=10
 )
 
-# Re-index Control Button
 reindex_button = st.sidebar.button("🔄 Re-index with New Parameters")
 
 st.sidebar.markdown("---")
 
-# Fallback Toggle Switch
+# Assistant Behavior & Response Persona Controls
 st.sidebar.markdown("### 🧠 Assistant Behavior")
 allow_fallback = st.sidebar.toggle(
     "🌐 Allow General Knowledge Fallback",
@@ -289,9 +321,18 @@ allow_fallback = st.sidebar.toggle(
     ),
 )
 
+response_style = st.sidebar.selectbox(
+    "👔 Output Persona",
+    [
+        "Standard Detailed",
+        "Boardroom Executive Briefing",
+        "Strategic Action & Risk Plan",
+    ],
+)
+
 st.sidebar.markdown("---")
 
-# Filter Cached Collections strictly by Active Project Hash
+# Cached Collections Selector (Strictly filtered by active project hash)
 active_proj_hash = hashlib.md5(
     st.session_state.current_project.encode("utf-8")
 ).hexdigest()[:6]
@@ -316,7 +357,6 @@ if selected_cached_kb != "-- Choose from cache --":
   try:
     parts = selected_cached_kb.split("_kb_")
     rest = parts[1]
-
     file_and_params = rest.rsplit("_cs", 1)
     base_prefix = file_and_params[0]
     params = file_and_params[1].split("_ol")
@@ -339,7 +379,7 @@ if selected_cached_kb != "-- Choose from cache --":
 
 st.sidebar.markdown("---")
 
-# Multi-File Uploader
+# Multi-File Uploader (PDF, TXT, MD)
 uploaded_files = st.sidebar.file_uploader(
     "Upload Files (Multiple PDFs/TXT/MD)",
     type=["txt", "md", "pdf"],
@@ -375,7 +415,7 @@ if uploaded_files:
     except Exception as e:
       st.sidebar.error(f"Error reading files: {e}")
 
-# Handle Document Loading / Re-indexing Logic with Chroma
+# Document Loading & Indexing Execution
 if st.session_state.get("current_kb"):
   store = ChromaVectorStore(
       project_name=st.session_state.current_project,
@@ -423,7 +463,13 @@ if st.sidebar.button("🗑️ Clear Active Knowledge Base"):
   st.session_state.messages = []
   st.rerun()
 
-# --- MAIN CHAT INTERFACE ---
+
+# ==========================================
+# 10. MAIN CHAT INTERFACE & GENERATION PIPELINE
+# Purpose: Renders chat message history, captures user queries, 
+# displays the loading animation, constructs parameterized prompts 
+# based on personas, and calls Ollama for responses.
+# ==========================================
 if st.session_state.doc_loaded and st.session_state.current_kb:
   st.info(
       f"🗂️ Active Project: **{st.session_state.current_project}** | 📂 Knowledge"
@@ -445,7 +491,7 @@ if st.session_state.doc_loaded and st.session_state.current_kb:
         st.markdown(user_query)
 
       with st.chat_message("assistant"):
-        # Placeholder for the Gemini/Claude style bouncing dots animation
+        # Display Gemini/Claude style typing loading animation
         loading_placeholder = st.empty()
         loading_placeholder.markdown(
             """
@@ -459,21 +505,39 @@ if st.session_state.doc_loaded and st.session_state.current_kb:
         )
 
         try:
-          # 1. Search Chroma DB
+          # 1. Retrieve relevant chunks from Chroma DB
           retrieved_chunks = st.session_state.vector_store.search(
               user_query, top_k=4
           )
           context = "\n\n".join(retrieved_chunks)
 
+          # 2. Extract recent conversational history
           history_str = ""
           for msg in st.session_state.messages[-6:-1]:
             role = "User" if msg["role"] == "user" else "Assistant"
             history_str += f"{role}: {msg['content']}\n"
 
+          # 3. Parameterize persona instructions for the boardroom / standard output
+          if response_style == "Boardroom Executive Briefing":
+            persona_instructions = """You are a senior executive advisor presenting to a corporate board of directors. 
+Your tone must be authoritative, concise, objective, and strategic. 
+Structure your response as follows:
+1. **Executive Summary:** A brief high-level takeaway.
+2. **Key Findings:** Bulleted insights backed directly by the document context.
+3. **Strategic Implications:** What this means for corporate decision-making."""
+          elif response_style == "Strategic Action & Risk Plan":
+            persona_instructions = """You are a strategic risk consultant briefing leadership. 
+Focus strictly on operational impacts, risks, and actionable next steps derived from the documents."""
+          else:
+            persona_instructions = """You are a helpful AI assistant. Answer the question thoroughly using the provided document context."""
+
+          # 4. Construct final parameterized prompt
           if allow_fallback:
-            prompt = f"""You are a helpful AI assistant. Answer the question using the provided document context and conversational history. 
-If the information is present in the document context, rely on it. 
-If the information is NOT in the document context, you are allowed to use your own general knowledge to answer, but please note to the user that the information is coming from general knowledge rather than the uploaded document.
+            prompt = f"""{persona_instructions}
+
+PROJECT: {st.session_state.current_project}
+KNOWLEDGE BASE: {st.session_state.current_kb}
+Fallback Mode: Enabled (General knowledge allowed if context is missing, with explicit notice).
 
 CONVERSATIONAL HISTORY:
 {history_str}
@@ -486,7 +550,11 @@ CURRENT QUESTION:
 
 ANSWER:"""
           else:
-            prompt = f"""You are a strict, helpful AI assistant. Answer the question using the provided document context and conversational history. If the answer cannot be found within the context, state clearly that the document does not contain the information.
+            prompt = f"""{persona_instructions}
+
+PROJECT: {st.session_state.current_project}
+KNOWLEDGE BASE: {st.session_state.current_kb}
+Fallback Mode: Strict (Use only document context).
 
 CONVERSATIONAL HISTORY:
 {history_str}
@@ -499,11 +567,11 @@ CURRENT QUESTION:
 
 ANSWER:"""
 
-          # 2. Generate response from Ollama
+          # 5. Generate response from local Ollama model
           response = ollama.generate(model=GENERATION_MODEL, prompt=prompt)
           answer = response["response"]
 
-          # Clear the animation placeholder and display the final markdown answer
+          # Clear loading animation and render markdown answer
           loading_placeholder.empty()
           st.markdown(answer)
           st.session_state.messages.append(
